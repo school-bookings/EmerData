@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EMERGENCE[Y] — Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap');
+
+  :root {
+    --bg:        #080b10;
+    --surface:   #0d1117;
+    --surface2:  #141b24;
+    --border:    #1e2d3d;
+    --text:      #c9d1d9;
+    --muted:     #4a5568;
+    --cyan:      #00e5ff;
+    --lime:      #b5ff3a;
+    --orange:    #ff6b35;
+    --pink:      #ff4d8d;
+    --purple:    #b57bff;
+    --gold:      #ffd166;
+
+    --eco:   #ffd166;
+    --hlth:  #ff4d8d;
+    --edu:   #00e5ff;
+    --soc:   #b57bff;
+    --env:   #b5ff3a;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── grid noise texture overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,.015) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,.015) 40px);
+    pointer-events: none; z-index: 0;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* ── Header ── */
+  header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 1.5rem; margin-bottom: 2.5rem;
+    gap: 1rem; flex-wrap: wrap;
+  }
+  .logo { font-family: 'Space Mono', monospace; font-size: .7rem; color: var(--muted); letter-spacing: .2em; }
+  h1 {
+    font-family: 'Syne', sans-serif; font-weight: 800; font-size: clamp(1.6rem, 4vw, 2.6rem);
+    line-height: 1; letter-spacing: -.02em;
+  }
+  h1 span { color: var(--cyan); }
+  .subtitle { font-family: 'Space Mono', monospace; font-size: .7rem; color: var(--muted); margin-top: .4rem; }
+  #last-updated { font-family: 'Space Mono', monospace; font-size: .65rem; color: var(--muted); text-align: right; }
+  #refresh-btn {
+    display: block; margin-top: .4rem;
+    background: none; border: 1px solid var(--border); color: var(--cyan);
+    font-family: 'Space Mono', monospace; font-size: .65rem; letter-spacing: .1em;
+    padding: .35rem .8rem; cursor: pointer; border-radius: 2px;
+    transition: background .2s;
+  }
+  #refresh-btn:hover { background: rgba(0,229,255,.08); }
+
+  /* ── Loading / Error ── */
+  #loader {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 60vh; gap: 1.2rem;
+  }
+  .spinner {
+    width: 40px; height: 40px;
+    border: 2px solid var(--border);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loader-text { font-family: 'Space Mono', monospace; font-size: .75rem; color: var(--muted); }
+
+  #error-msg {
+    display: none; text-align: center; padding: 3rem;
+    font-family: 'Space Mono', monospace; color: var(--orange); font-size: .8rem;
+  }
+
+  /* ── KPI Strip ── */
+  .kpi-strip {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 1px; background: var(--border);
+    border: 1px solid var(--border);
+    margin-bottom: 2rem;
+  }
+  .kpi {
+    background: var(--surface); padding: 1.4rem 1.2rem;
+    display: flex; flex-direction: column; gap: .3rem;
+  }
+  .kpi-label { font-family: 'Space Mono', monospace; font-size: .6rem; color: var(--muted); letter-spacing: .15em; text-transform: uppercase; }
+  .kpi-value { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .kpi-sub { font-family: 'Space Mono', monospace; font-size: .6rem; color: var(--muted); }
+
+  /* ── Section titles ── */
+  .section-label {
+    font-family: 'Space Mono', monospace; font-size: .65rem; letter-spacing: .2em;
+    color: var(--muted); text-transform: uppercase;
+    border-left: 2px solid var(--cyan); padding-left: .7rem;
+    margin-bottom: 1.2rem;
+  }
+
+  /* ── Grid layouts ── */
+  .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 1.2rem; margin-bottom: 1.2rem; }
+  .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.2rem; margin-bottom: 1.2rem; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    padding: 1.5rem; border-radius: 2px;
+    position: relative; overflow: hidden;
+  }
+  .card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--cyan), transparent);
+  }
+  .card-title {
+    font-family: 'Space Mono', monospace; font-size: .65rem; color: var(--muted);
+    letter-spacing: .15em; text-transform: uppercase; margin-bottom: 1.2rem;
+  }
+  canvas { max-width: 100%; }
+
+  /* ── Stat bars (Key Markers) ── */
+  .stat-row { margin-bottom: 1rem; }
+  .stat-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: .35rem; }
+  .stat-name { font-size: .8rem; font-weight: 700; }
+  .stat-val { font-family: 'Space Mono', monospace; font-size: .75rem; }
+  .stat-track {
+    height: 6px; background: var(--surface2); border-radius: 1px; overflow: hidden;
+    position: relative;
+  }
+  .stat-fill { height: 100%; border-radius: 1px; transition: width 1s ease; }
+  .stat-mid {
+    position: absolute; top: 0; left: 50%; width: 1px; height: 100%; background: var(--border);
+  }
+
+  /* ── Verdict table ── */
+  .verdict-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+  .verdict-table th {
+    font-family: 'Space Mono', monospace; font-size: .6rem; color: var(--muted);
+    letter-spacing: .1em; text-align: left; padding: .5rem .75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .verdict-table td { padding: .55rem .75rem; border-bottom: 1px solid rgba(255,255,255,.04); }
+  .verdict-table tr:last-child td { border-bottom: none; }
+  .verdict-pill {
+    display: inline-block; padding: .15rem .55rem; border-radius: 2px;
+    font-family: 'Space Mono', monospace; font-size: .6rem; font-weight: 700;
+    white-space: nowrap;
+  }
+
+  /* ── Choices heatmap ── */
+  .heatmap-grid { display: grid; grid-template-columns: 1fr; gap: .5rem; }
+  .hm-row { display: grid; grid-template-columns: 1.4fr repeat(3, 1fr); gap: .4rem; align-items: center; }
+  .hm-label { font-family: 'Space Mono', monospace; font-size: .6rem; color: var(--muted); }
+  .hm-cell {
+    text-align: center; padding: .45rem .2rem; border-radius: 2px;
+    font-family: 'Space Mono', monospace; font-size: .65rem; font-weight: 700;
+    transition: background .4s;
+  }
+  .hm-header { font-family: 'Space Mono', monospace; font-size: .55rem; color: var(--muted); text-align: center; }
+
+  /* ── Responsive ── */
+  @media (max-width: 600px) {
+    .hm-row { grid-template-columns: 1fr repeat(3, 1fr); }
+    .kpi-value { font-size: 1.5rem; }
+  }
+
+  /* ── Animations ── */
+  .card { animation: fadeUp .4s ease both; }
+  @keyframes fadeUp { from { opacity:0; transform: translateY(12px); } to { opacity:1; transform: none; } }
+  .card:nth-child(2) { animation-delay: .05s; }
+  .card:nth-child(3) { animation-delay: .1s; }
+  .card:nth-child(4) { animation-delay: .15s; }
+
+  /* path colours */
+  .path-tech { color: var(--cyan); }
+  .path-env  { color: var(--lime); }
+  .path-gov  { color: var(--lime); }
+
+  .no-data { font-family: 'Space Mono', monospace; font-size: .7rem; color: var(--muted); padding: 2rem 0; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <div class="logo">EMERGENCE[Y] · ANALYTICS</div>
+      <h1>GAME <span>DATA</span></h1>
+      <div class="subtitle">// live session telemetry</div>
+    </div>
+    <div>
+      <div id="last-updated">—</div>
+      <button id="refresh-btn" onclick="loadData()">↺ REFRESH</button>
+    </div>
+  </header>
+
+  <!-- Loading -->
+  <div id="loader">
+    <div class="spinner"></div>
+    <div class="loader-text">fetching sessions from firebase…</div>
+  </div>
+
+  <div id="error-msg">
+    ⚠ Could not load data from Firebase. Check your network connection or database URL.
+  </div>
+
+  <!-- Dashboard (hidden until data loads) -->
+  <div id="dashboard" style="display:none">
+
+    <!-- KPIs -->
+    <div class="kpi-strip" id="kpi-strip"></div>
+
+    <!-- Row 1 -->
+    <div class="section-label">OVERVIEW</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Path Selection — which story did players choose?</div>
+        <canvas id="chart-paths" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">Completion vs Early Exit</div>
+        <canvas id="chart-completion" height="220"></canvas>
+      </div>
+    </div>
+
+    <!-- Row 2 -->
+    <div class="section-label">SESSION DEPTH</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Rounds Completed — distribution</div>
+        <canvas id="chart-rounds" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="card-title">Sessions Over Time</div>
+        <canvas id="chart-timeline" height="220"></canvas>
+      </div>
+    </div>
+
+    <!-- Row 3: Key Markers -->
+    <div class="section-label">KEY MARKERS — average final scores</div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-title">Average Final Stats (all completed sessions)</div>
+        <div id="stat-bars"></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Final Stats Distribution — radar</div>
+        <canvas id="chart-radar" height="260"></canvas>
+      </div>
+    </div>
+
+    <!-- Row 4: Stats by path -->
+    <div class="section-label">KEY MARKERS BY PATH</div>
+    <div class="grid-3" id="path-stat-cards"></div>
+
+    <!-- Row 5: Choices heatmap -->
+    <div class="section-label">CHOICE HEATMAP — option A / B / C frequency per event</div>
+    <div class="grid-2" id="heatmap-cards"></div>
+
+    <!-- Row 6: Verdicts -->
+    <div class="section-label">VERDICTS</div>
+    <div class="card" style="margin-bottom:1.2rem">
+      <div class="card-title">Verdict distribution — how did Victoria end up?</div>
+      <canvas id="chart-verdicts" height="220"></canvas>
+    </div>
+
+  </div><!-- /dashboard -->
+
+</div><!-- /wrap -->
+
+<script>
+// ── CONFIG ─────────────────────────────────────────────────────────
+const FIREBASE_URL = 'https://emeregencey-game-default-rtdb.firebaseio.com/sessions.json';
+
+// ── COLORS ─────────────────────────────────────────────────────────
+const C = {
+  cyan:   '#00e5ff',
+  lime:   '#b5ff3a',
+  orange: '#ff6b35',
+  pink:   '#ff4d8d',
+  purple: '#b57bff',
+  gold:   '#ffd166',
+  muted:  '#4a5568',
+  border: '#1e2d3d',
+  text:   '#c9d1d9',
+};
+
+const STAT_META = [
+  { key: 'economy',     label: 'Economy',       color: C.gold   },
+  { key: 'healthcare',  label: 'Healthcare',    color: C.pink   },
+  { key: 'education',   label: 'Education',     color: C.cyan   },
+  { key: 'social',      label: 'Social Justice',color: C.purple },
+  { key: 'environment', label: 'Environment',   color: C.lime   },
+];
+
+const PATH_META = {
+  technology:  { label: 'Technology',  color: C.cyan   },
+  environment: { label: 'Environment', color: C.lime   },
+  government:  { label: 'Government',  color: C.lime   },
+};
+
+Chart.defaults.color = C.text;
+Chart.defaults.borderColor = C.border;
+Chart.defaults.font.family = "'Space Mono', monospace";
+Chart.defaults.font.size = 11;
+
+const chartInstances = {};
+
+function destroyChart(id) {
+  if (chartInstances[id]) { chartInstances[id].destroy(); delete chartInstances[id]; }
+}
+
+// ── DATA LOAD ───────────────────────────────────────────────────────
+async function loadData() {
+  document.getElementById('loader').style.display = 'flex';
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('error-msg').style.display = 'none';
+
+  try {
+    const res = await fetch(FIREBASE_URL);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const raw = await res.json();
+
+    const sessions = raw ? Object.values(raw) : [];
+    document.getElementById('last-updated').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('dashboard').style.display = 'block';
+
+    renderDashboard(sessions);
+  } catch (e) {
+    document.getElementById('loader').style.display = 'none';
+    document.getElementById('error-msg').style.display = 'block';
+    console.error(e);
+  }
+}
+
+// ── RENDER ─────────────────────────────────────────────────────────
+function renderDashboard(sessions) {
+  if (!sessions.length) {
+    document.getElementById('dashboard').innerHTML =
+      '<div class="no-data">No sessions recorded yet. Play the game first!</div>';
+    return;
+  }
+
+  const completed = sessions.filter(s => !s.endedEarly);
+  const avg = (arr) => arr.length ? arr.reduce((a,b) => a+b, 0) / arr.length : 0;
+
+  // ── KPIs ──────────────────────────────────────────────────────
+  const avgRounds = avg(sessions.map(s => s.completedRounds || 0));
+  const completionRate = sessions.length ? (completed.length / sessions.length * 100) : 0;
+  const avgOverall = avg(
+    completed.filter(s => s.finalStats).map(s =>
+      avg(Object.values(s.finalStats))
+    )
+  );
+
+  const kpis = [
+    { label: 'Total Sessions', value: sessions.length, sub: 'all time', color: C.cyan },
+    { label: 'Avg Rounds', value: avgRounds.toFixed(1), sub: 'out of 6', color: C.gold },
+    { label: 'Completion Rate', value: completionRate.toFixed(0) + '%', sub: 'finished all 6', color: C.lime },
+    { label: 'Avg Overall Score', value: avgOverall.toFixed(1), sub: 'all key markers', color: C.purple },
+    { label: 'Unique Paths', value: new Set(sessions.map(s=>s.path)).size, sub: 'of 3 available', color: C.pink },
+    { label: 'Completed Games', value: completed.length, sub: 'reached verdict', color: C.orange },
+  ];
+
+  document.getElementById('kpi-strip').innerHTML = kpis.map(k => `
+    <div class="kpi">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value" style="color:${k.color}">${k.value}</div>
+      <div class="kpi-sub">${k.sub}</div>
+    </div>
+  `).join('');
+
+  // ── Path donut ────────────────────────────────────────────────
+  const pathCounts = {};
+  sessions.forEach(s => { pathCounts[s.path] = (pathCounts[s.path]||0)+1; });
+  const pathKeys = Object.keys(pathCounts);
+
+  destroyChart('paths');
+  chartInstances['paths'] = new Chart(document.getElementById('chart-paths'), {
+    type: 'doughnut',
+    data: {
+      labels: pathKeys.map(k => (PATH_META[k]||{label:k}).label),
+      datasets: [{
+        data: pathKeys.map(k => pathCounts[k]),
+        backgroundColor: pathKeys.map(k => (PATH_META[k]||{color:C.muted}).color + 'cc'),
+        borderColor: pathKeys.map(k => (PATH_META[k]||{color:C.muted}).color),
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      cutout: '65%',
+      plugins: { legend: { position: 'bottom', labels: { padding: 16, boxWidth: 10 } } },
+    }
+  });
+
+  // ── Completion pie ────────────────────────────────────────────
+  destroyChart('completion');
+  chartInstances['completion'] = new Chart(document.getElementById('chart-completion'), {
+    type: 'doughnut',
+    data: {
+      labels: ['Finished', 'Ended Early'],
+      datasets: [{
+        data: [completed.length, sessions.length - completed.length],
+        backgroundColor: [C.lime + 'cc', C.orange + 'cc'],
+        borderColor: [C.lime, C.orange],
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      cutout: '65%',
+      plugins: { legend: { position: 'bottom', labels: { padding: 16, boxWidth: 10 } } },
+    }
+  });
+
+  // ── Rounds distribution ───────────────────────────────────────
+  const roundCounts = {1:0,2:0,3:0,4:0,5:0,6:0};
+  sessions.forEach(s => { const r = Math.min(6, Math.max(1, s.completedRounds||1)); roundCounts[r]++; });
+
+  destroyChart('rounds');
+  chartInstances['rounds'] = new Chart(document.getElementById('chart-rounds'), {
+    type: 'bar',
+    data: {
+      labels: ['1','2','3','4','5','6'],
+      datasets: [{
+        label: 'Sessions',
+        data: Object.values(roundCounts),
+        backgroundColor: Object.keys(roundCounts).map((r,i) =>
+          r == 6 ? C.lime + 'cc' : C.cyan + '66'),
+        borderColor: Object.keys(roundCounts).map((r,i) =>
+          r == 6 ? C.lime : C.cyan),
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      scales: {
+        x: { title: { display: true, text: 'Rounds played' } },
+        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  // ── Timeline ──────────────────────────────────────────────────
+  const byDate = {};
+  sessions.forEach(s => {
+    const d = s.date || (s.timestamp ? s.timestamp.slice(0,10) : 'unknown');
+    byDate[d] = (byDate[d]||0)+1;
+  });
+  const dateKeys = Object.keys(byDate).sort();
+
+  destroyChart('timeline');
+  chartInstances['timeline'] = new Chart(document.getElementById('chart-timeline'), {
+    type: 'line',
+    data: {
+      labels: dateKeys,
+      datasets: [{
+        label: 'Sessions',
+        data: dateKeys.map(d => byDate[d]),
+        borderColor: C.cyan,
+        backgroundColor: C.cyan + '22',
+        fill: true,
+        tension: .35,
+        pointRadius: 3,
+        pointBackgroundColor: C.cyan,
+      }]
+    },
+    options: {
+      scales: {
+        y: { beginAtZero: true, ticks: { stepSize: 1 } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  // ── Stat bars ─────────────────────────────────────────────────
+  const statAvgs = {};
+  const statSessions = completed.filter(s => s.finalStats);
+  STAT_META.forEach(m => {
+    statAvgs[m.key] = avg(statSessions.map(s => s.finalStats[m.key] || 50));
+  });
+
+  document.getElementById('stat-bars').innerHTML = STAT_META.map(m => {
+    const v = statAvgs[m.key];
+    return `<div class="stat-row">
+      <div class="stat-header">
+        <span class="stat-name" style="color:${m.color}">${m.label}</span>
+        <span class="stat-val" style="color:${m.color}">${v.toFixed(1)}</span>
+      </div>
+      <div class="stat-track">
+        <div class="stat-fill" style="width:${v}%;background:${m.color};opacity:.75"></div>
+        <div class="stat-mid"></div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // ── Radar chart ───────────────────────────────────────────────
+  destroyChart('radar');
+  chartInstances['radar'] = new Chart(document.getElementById('chart-radar'), {
+    type: 'radar',
+    data: {
+      labels: STAT_META.map(m => m.label),
+      datasets: [{
+        label: 'Avg Score',
+        data: STAT_META.map(m => statAvgs[m.key]),
+        backgroundColor: C.cyan + '33',
+        borderColor: C.cyan,
+        pointBackgroundColor: STAT_META.map(m => m.color),
+        pointRadius: 4,
+        borderWidth: 1.5,
+      }]
+    },
+    options: {
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { display: false },
+          grid: { color: C.border },
+          pointLabels: { font: { size: 11 } }
+        }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+
+  // ── Stats by path ─────────────────────────────────────────────
+  const pathStatContainer = document.getElementById('path-stat-cards');
+  pathStatContainer.innerHTML = '';
+
+  Object.keys(pathCounts).forEach(pathKey => {
+    const meta = PATH_META[pathKey] || { label: pathKey, color: C.muted };
+    const pathSessions = statSessions.filter(s => s.path === pathKey);
+
+    if (!pathSessions.length) return;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.style.setProperty('--accent', meta.color);
+    card.innerHTML = `
+      <div class="card-title" style="color:${meta.color}">${meta.label.toUpperCase()} PATH
+        <span style="color:var(--muted)"> · ${pathSessions.length} sessions</span>
+      </div>
+      ${STAT_META.map(m => {
+        const v = avg(pathSessions.map(s => s.finalStats[m.key] || 50));
+        return `<div class="stat-row">
+          <div class="stat-header">
+            <span style="font-size:.75rem;font-weight:700;color:${m.color}">${m.label}</span>
+            <span style="font-family:'Space Mono',monospace;font-size:.7rem;color:${m.color}">${v.toFixed(1)}</span>
+          </div>
+          <div class="stat-track">
+            <div class="stat-fill" style="width:${v}%;background:${m.color};opacity:.7"></div>
+            <div class="stat-mid"></div>
+          </div>
+        </div>`;
+      }).join('')}
+    `;
+    // accent line on top
+    card.style.cssText += `--col:${meta.color}`;
+    card.querySelector('.card-title').style.borderBottom = `1px solid ${meta.color}33`;
+    card.querySelector('.card-title').style.paddingBottom = '.8rem';
+    card.querySelector('.card-title').style.marginBottom = '1rem';
+    pathStatContainer.appendChild(card);
+  });
+
+  // ── Choice heatmap ────────────────────────────────────────────
+  const heatmapContainer = document.getElementById('heatmap-cards');
+  heatmapContainer.innerHTML = '';
+
+  // Group choices by path → event
+  const choiceData = {}; // path → { eventTitle: [0,0,0] }
+  sessions.forEach(s => {
+    if (!s.choices || !s.path) return;
+    if (!choiceData[s.path]) choiceData[s.path] = {};
+    s.choices.forEach(c => {
+      if (!choiceData[s.path][c.eventTitle]) choiceData[s.path][c.eventTitle] = [0,0,0];
+      const idx = Math.min(2, Math.max(0, c.optionIndex));
+      choiceData[s.path][c.eventTitle][idx]++;
+    });
+  });
+
+  Object.keys(choiceData).forEach(pathKey => {
+    const meta = PATH_META[pathKey] || { label: pathKey, color: C.muted };
+    const events = choiceData[pathKey];
+    const eventNames = Object.keys(events);
+    if (!eventNames.length) return;
+
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    const rows = eventNames.map(evt => {
+      const counts = events[evt];
+      const total = counts.reduce((a,b)=>a+b,0) || 1;
+      const pcts = counts.map(c => c/total);
+      const maxIdx = pcts.indexOf(Math.max(...pcts));
+
+      return `<div class="hm-row">
+        <div class="hm-label" title="${evt}">${evt.length>22 ? evt.slice(0,20)+'…' : evt}</div>
+        ${['A','B','C'].map((lbl, i) => {
+          const pct = pcts[i];
+          const alpha = Math.round(30 + pct * 170).toString(16).padStart(2,'0');
+          const isTop = i === maxIdx;
+          return `<div class="hm-cell" style="background:${meta.color}${alpha};color:${isTop?meta.color:'var(--text)'}">
+            ${lbl}: ${(pct*100).toFixed(0)}%
+          </div>`;
+        }).join('')}
+      </div>`;
+    });
+
+    card.innerHTML = `
+      <div class="card-title" style="color:${meta.color}">${meta.label.toUpperCase()} PATH — choice frequency</div>
+      <div class="heatmap-grid">
+        <div class="hm-row">
+          <div class="hm-header"></div>
+          <div class="hm-header">Option A</div>
+          <div class="hm-header">Option B</div>
+          <div class="hm-header">Option C</div>
+        </div>
+        ${rows.join('')}
+      </div>
+    `;
+    heatmapContainer.appendChild(card);
+  });
+
+  // ── Verdicts bar ──────────────────────────────────────────────
+  const verdictCounts = {};
+  completed.forEach(s => {
+    if (s.verdictTitle) verdictCounts[s.verdictTitle] = (verdictCounts[s.verdictTitle]||0)+1;
+  });
+  const vLabels = Object.keys(verdictCounts);
+  const vColors = [C.cyan, C.lime, C.gold, C.pink, C.purple, C.orange];
+
+  destroyChart('verdicts');
+  chartInstances['verdicts'] = new Chart(document.getElementById('chart-verdicts'), {
+    type: 'bar',
+    data: {
+      labels: vLabels,
+      datasets: [{
+        data: vLabels.map(v => verdictCounts[v]),
+        backgroundColor: vColors.map(c => c + 'aa'),
+        borderColor: vColors,
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      scales: {
+        x: { beginAtZero: true, ticks: { stepSize: 1 } }
+      },
+      plugins: { legend: { display: false } }
+    }
+  });
+}
+
+// ── INIT ───────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
