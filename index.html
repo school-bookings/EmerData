@@ -218,9 +218,9 @@
 
 <script>
 // ── CONFIG ────────────────────────────────────────────────────────
-const FB_SESSIONS    = 'https://emeregencey-game-default-rtdb.firebaseio.com/sessions.json';
-const FB_QUIZ        = 'https://emergencey-characters-default-rtdb.firebaseio.com/quiz_results.json';
-const FB_SUBMISSIONS = 'https://emergencey-characters-default-rtdb.firebaseio.com/submissions.json';
+// Data is fetched from our own secure API route (/api/data).
+// That server-side function talks to Firebase using the Admin SDK.
+// No Firebase credentials ever reach the browser.
 
 const C = { cyan:'#00e5ff', lime:'#b5ff3a', orange:'#ff6b35', pink:'#ff4d8d', purple:'#b57bff', gold:'#ffd166', muted:'#4a5568', border:'#1e2d3d', text:'#c9d1d9' };
 const STAT_META = [
@@ -285,12 +285,12 @@ async function loadData(){
   document.getElementById('dashboard').style.display='none';
   document.getElementById('error-msg').style.display='none';
   try{
-    const [r1,r2,r3]=await Promise.all([fetch(FB_SESSIONS),fetch(FB_QUIZ),fetch(FB_SUBMISSIONS)]);
-    const parse=async r=>r.ok?await r.json():{};
-    const [d1,d2,d3]=await Promise.all([parse(r1),parse(r2),parse(r3)]);
-    allSessions=d1?Object.values(d1):[];
-    allQuiz=d2?Object.values(d2):[];
-    allSubs=d3?Object.values(d3):[];
+    const res = await fetch('/api/data');
+    if(!res.ok) throw new Error(`API error ${res.status}`);
+    const data = await res.json();
+    allSessions = data.sessions    ? Object.values(data.sessions)    : [];
+    allQuiz     = data.quiz_results? Object.values(data.quiz_results): [];
+    allSubs     = data.submissions ? Object.values(data.submissions) : [];
     document.getElementById('last-updated').textContent='Updated '+new Date().toLocaleTimeString();
     document.getElementById('loader').style.display='none';
     document.getElementById('dashboard').style.display='block';
@@ -310,7 +310,7 @@ function mc(id,cfg){ dc(id); const el=document.getElementById(id); if(!el)return
 const avg=arr=>arr.length?arr.reduce((a,b)=>a+b,0)/arr.length:0;
 
 // ════════════════════════════════════════════════════════════════
-// GAME TAB
+// GAME TAB  (unchanged logic from original)
 // ════════════════════════════════════════════════════════════════
 function renderGameTab(sessions){
   const completed=sessions.filter(s=>!s.endedEarly);
@@ -319,93 +319,93 @@ function renderGameTab(sessions){
   const compRate=sessions.length?(completed.length/sessions.length*100):0;
   const avgOv=avg(statSess.map(s=>avg(Object.values(s.finalStats))));
 
-  document.getElementById('kpi-game').innerHTML=[
-    {label:'Total Sessions',    value:sessions.length,           sub:'all time',        color:C.cyan},
-    {label:'Avg Rounds',        value:avgRounds.toFixed(1),      sub:'out of 5',        color:C.gold},
-    {label:'Completion Rate',   value:compRate.toFixed(0)+'%',   sub:'finished all 5',  color:C.lime},
-    {label:'Avg Overall Score', value:avgOv.toFixed(1),          sub:'key marker avg',  color:C.purple},
-    {label:'Paths Used',        value:new Set(sessions.map(s=>s.path).filter(Boolean)).size, sub:'of 3 available', color:C.pink},
-    {label:'Completed Games',   value:completed.length,          sub:'reached verdict', color:C.orange},
-  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value" style="color:${k.color}">${k.value}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+  document.getElementById('kpi-game').innerHTML=`
+    <div class="kpi"><div class="kpi-label">Total Sessions</div><div class="kpi-value" style="color:var(--cyan)">${sessions.length}</div></div>
+    <div class="kpi"><div class="kpi-label">Completed</div><div class="kpi-value" style="color:var(--lime)">${completed.length}</div><div class="kpi-sub">${compRate.toFixed(0)}% completion</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Rounds</div><div class="kpi-value" style="color:var(--gold)">${avgRounds.toFixed(1)}</div></div>
+    <div class="kpi"><div class="kpi-label">Avg Overall Score</div><div class="kpi-value" style="color:var(--purple)">${avgOv.toFixed(0)}</div><div class="kpi-sub">completed only</div></div>`;
 
-  if(!sessions.length){document.getElementById('tab-game').querySelectorAll('.card,.section-label').forEach(el=>el.style.display='none');return;}
+  // Path selection
+  const pathCounts={};
+  sessions.forEach(s=>{if(s.selectedPath)pathCounts[s.selectedPath]=(pathCounts[s.selectedPath]||0)+1;});
+  mc('chart-paths',{type:'doughnut',data:{labels:Object.keys(pathCounts).map(k=>PATH_META[k]?.label||k),datasets:[{data:Object.values(pathCounts),backgroundColor:Object.keys(pathCounts).map(k=>PATH_META[k]?.color||C.muted),borderWidth:0}]},options:{plugins:{legend:{position:'bottom'}},cutout:'60%'}});
 
-  // Path donut
-  const pc={};sessions.forEach(s=>{pc[s.path]=(pc[s.path]||0)+1;});const pk=Object.keys(pc);
-  mc('chart-paths',{type:'doughnut',data:{labels:pk.map(k=>(PATH_META[k]||{label:k}).label),datasets:[{data:pk.map(k=>pc[k]),backgroundColor:pk.map(k=>(PATH_META[k]||{color:C.muted}).color+'cc'),borderColor:pk.map(k=>(PATH_META[k]||{color:C.muted}).color),borderWidth:1}]},options:{cutout:'65%',plugins:{legend:{position:'bottom',labels:{padding:16,boxWidth:10}}}}});
+  // Completion
+  const earlyExit=sessions.filter(s=>s.endedEarly).length;
+  mc('chart-completion',{type:'doughnut',data:{labels:['Completed','Early Exit'],datasets:[{data:[completed.length,earlyExit],backgroundColor:[C.lime,C.orange],borderWidth:0}]},options:{plugins:{legend:{position:'bottom'}},cutout:'60%'}});
 
-  // Completion donut
-  mc('chart-completion',{type:'doughnut',data:{labels:['Finished','Ended Early'],datasets:[{data:[completed.length,sessions.length-completed.length],backgroundColor:[C.lime+'cc',C.orange+'cc'],borderColor:[C.lime,C.orange],borderWidth:1}]},options:{cutout:'65%',plugins:{legend:{position:'bottom',labels:{padding:16,boxWidth:10}}}}});
-
-  // Rounds bar
-  const rc={1:0,2:0,3:0,4:0,5:0};
-  sessions.forEach(s=>{const r=Math.min(5,Math.max(1,s.completedRounds||1));rc[r]++;});
-  mc('chart-rounds',{type:'bar',data:{labels:['1','2','3','4','5'],datasets:[{label:'Sessions',data:Object.values(rc),backgroundColor:Object.keys(rc).map(r=>r=='5'?C.lime+'cc':C.cyan+'66'),borderColor:Object.keys(rc).map(r=>r=='5'?C.lime:C.cyan),borderWidth:1}]},options:{scales:{x:{title:{display:true,text:'Rounds played'}},y:{beginAtZero:true,ticks:{stepSize:1}}},plugins:{legend:{display:false}}}});
+  // Rounds distribution
+  const roundDist={};
+  sessions.forEach(s=>{const r=s.completedRounds||0;roundDist[r]=(roundDist[r]||0)+1;});
+  const rKeys=Object.keys(roundDist).sort((a,b)=>+a-+b);
+  mc('chart-rounds',{type:'bar',data:{labels:rKeys.map(r=>`${r} rounds`),datasets:[{data:rKeys.map(r=>roundDist[r]),backgroundColor:C.cyan+'99',borderColor:C.cyan,borderWidth:1}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
 
   // Timeline
-  const bd={};sessions.forEach(s=>{const d=s.date||(s.timestamp?s.timestamp.slice(0,10):'unknown');bd[d]=(bd[d]||0)+1;});const dk=Object.keys(bd).sort();
-  mc('chart-timeline',{type:'line',data:{labels:dk,datasets:[{label:'Sessions',data:dk.map(d=>bd[d]),borderColor:C.cyan,backgroundColor:C.cyan+'22',fill:true,tension:.35,pointRadius:3,pointBackgroundColor:C.cyan}]},options:{scales:{y:{beginAtZero:true,ticks:{stepSize:1}}},plugins:{legend:{display:false}}}});
+  const dayMap={};
+  sessions.forEach(s=>{if(s.submittedAt){const d=s.submittedAt.slice(0,10);dayMap[d]=(dayMap[d]||0)+1;}});
+  const days=Object.keys(dayMap).sort();
+  mc('chart-timeline',{type:'line',data:{labels:days,datasets:[{label:'Sessions',data:days.map(d=>dayMap[d]),borderColor:C.cyan,backgroundColor:C.cyan+'22',fill:true,tension:.3,pointRadius:3}]},options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true,ticks:{stepSize:1}}}}});
 
   // Stat bars
-  const sa={};STAT_META.forEach(m=>{sa[m.key]=avg(statSess.map(s=>s.finalStats[m.key]||50));});
-  document.getElementById('stat-bars').innerHTML=STAT_META.map(m=>{const v=sa[m.key];return `<div class="stat-row"><div class="stat-header"><span class="stat-name" style="color:${m.color}">${m.label}</span><span class="stat-val" style="color:${m.color}">${v.toFixed(1)}</span></div><div class="stat-track"><div class="stat-fill" style="width:${v}%;background:${m.color};opacity:.75"></div><div class="stat-mid"></div></div></div>`;}).join('');
+  const statAvgs=STAT_META.map(m=>({...m,val:avg(statSess.map(s=>s.finalStats?.[m.key]||0))}));
+  document.getElementById('stat-bars').innerHTML=statAvgs.map(m=>`
+    <div class="stat-row">
+      <div class="stat-header"><span class="stat-name">${m.label}</span><span class="stat-val" style="color:${m.color}">${m.val.toFixed(0)}</span></div>
+      <div class="stat-track"><div class="stat-fill" style="width:${m.val}%;background:${m.color}"></div></div>
+    </div>`).join('');
 
   // Radar
-  mc('chart-radar',{type:'radar',data:{labels:STAT_META.map(m=>m.label),datasets:[{label:'Avg Score',data:STAT_META.map(m=>sa[m.key]),backgroundColor:C.cyan+'33',borderColor:C.cyan,pointBackgroundColor:STAT_META.map(m=>m.color),pointRadius:4,borderWidth:1.5}]},options:{scales:{r:{min:0,max:100,ticks:{display:false},grid:{color:C.border},pointLabels:{font:{size:11}}}},plugins:{legend:{display:false}}}});
+  mc('chart-radar',{type:'radar',data:{labels:STAT_META.map(m=>m.label),datasets:[{label:'Avg Score',data:statAvgs.map(m=>m.val),borderColor:C.cyan,backgroundColor:C.cyan+'33',pointBackgroundColor:C.cyan}]},options:{scales:{r:{min:0,max:100,ticks:{stepSize:20}}},plugins:{legend:{display:false}}}});
 
-  // Stats by path
-  const psc=document.getElementById('path-stat-cards');psc.innerHTML='';
-  Object.keys(pc).forEach(pathKey=>{
-    const meta=PATH_META[pathKey]||{label:pathKey,color:C.muted};
-    const ps=statSess.filter(s=>s.path===pathKey);if(!ps.length)return;
-    const card=document.createElement('div');card.className='card';
-    card.innerHTML=`<div class="card-title" style="color:${meta.color};border-bottom:1px solid ${meta.color}33;padding-bottom:.8rem;margin-bottom:1rem">${meta.label.toUpperCase()} <span style="color:var(--muted)">· ${ps.length} sessions</span></div>`+
-      STAT_META.map(m=>{const v=avg(ps.map(s=>s.finalStats[m.key]||50));return `<div class="stat-row"><div class="stat-header"><span style="font-size:.75rem;font-weight:700;color:${m.color}">${m.label}</span><span style="font-family:'Space Mono',monospace;font-size:.7rem;color:${m.color}">${v.toFixed(1)}</span></div><div class="stat-track"><div class="stat-fill" style="width:${v}%;background:${m.color};opacity:.7"></div><div class="stat-mid"></div></div></div>`;}).join('');
-    psc.appendChild(card);
-  });
+  // Path stat cards
+  const pathKeys=Object.keys(PATH_META);
+  document.getElementById('path-stat-cards').innerHTML=pathKeys.map(pk=>{
+    const ps=statSess.filter(s=>s.selectedPath===pk);
+    const meta=PATH_META[pk];
+    if(!ps.length) return `<div class="card"><div class="card-title" style="color:${meta.color}">${meta.label}</div><div class="no-data" style="padding:1rem 0">No completed sessions</div></div>`;
+    return `<div class="card"><div class="card-title" style="color:${meta.color}">${meta.label} <span style="opacity:.5">(${ps.length} sessions)</span></div>`+
+      STAT_META.map(m=>{const v=avg(ps.map(s=>s.finalStats?.[m.key]||0));return `<div class="stat-row"><div class="stat-header"><span class="stat-name" style="font-size:.75rem">${m.label}</span><span class="stat-val" style="color:${m.color}">${v.toFixed(0)}</span></div><div class="stat-track"><div class="stat-fill" style="width:${v}%;background:${m.color};opacity:.7"></div></div></div>`}).join('')+`</div>`;
+  }).join('');
 
   // Heatmap
-  const hc=document.getElementById('heatmap-cards');hc.innerHTML='';
-  const cd={};sessions.forEach(s=>{if(!s.choices||!s.path)return;if(!cd[s.path])cd[s.path]={};s.choices.forEach(c=>{if(!cd[s.path][c.eventTitle])cd[s.path][c.eventTitle]=[0,0,0];cd[s.path][c.eventTitle][Math.min(2,Math.max(0,c.optionIndex))]++;});});
-  Object.keys(cd).forEach(pathKey=>{
-    const meta=PATH_META[pathKey]||{label:pathKey,color:C.muted};
-    const events=cd[pathKey];const en=Object.keys(events);if(!en.length)return;
-    const card=document.createElement('div');card.className='card';
-    const rows=en.map(evt=>{const counts=events[evt];const total=counts.reduce((a,b)=>a+b,0)||1;const pcts=counts.map(c=>c/total);const maxIdx=pcts.indexOf(Math.max(...pcts));return `<div class="hm-row"><div class="hm-label" title="${evt}">${evt.length>22?evt.slice(0,20)+'…':evt}</div>${['A','B','C'].map((lbl,i)=>{const pct=pcts[i];const alpha=Math.round(30+pct*170).toString(16).padStart(2,'0');return `<div class="hm-cell" style="background:${meta.color}${alpha};color:${i===maxIdx?meta.color:'var(--text)'}">${lbl}: ${(pct*100).toFixed(0)}%</div>`;}).join('')}</div>`;});
-    card.innerHTML=`<div class="card-title" style="color:${meta.color}">${meta.label.toUpperCase()} — choice frequency</div><div class="heatmap-grid"><div class="hm-row"><div class="hm-header"></div><div class="hm-header">A</div><div class="hm-header">B</div><div class="hm-header">C</div></div>${rows.join('')}</div>`;
-    hc.appendChild(card);
-  });
+  const allEvents={};
+  sessions.forEach(s=>{if(s.choices)Object.keys(s.choices).forEach(ek=>{if(!allEvents[ek])allEvents[ek]={A:0,B:0,C:0};const c=(s.choices[ek]||'').toUpperCase();if(c==='A'||c==='B'||c==='C')allEvents[ek][c]++;});});
+  const evKeys=Object.keys(allEvents).sort();
+  const heatColor=(pct)=>pct>60?C.lime:pct>40?C.gold:C.orange;
+  document.getElementById('heatmap-cards').innerHTML=evKeys.length?`<div class="card" style="grid-column:1/-1"><div class="card-title">Choice distribution per event</div><div class="heatmap-grid">
+    <div class="hm-row"><div class="hm-label">Event</div><div class="hm-header">A</div><div class="hm-header">B</div><div class="hm-header">C</div></div>`+
+    evKeys.map(ek=>{const e=allEvents[ek];const tot=e.A+e.B+e.C||1;const pA=(e.A/tot*100).toFixed(0),pB=(e.B/tot*100).toFixed(0),pC=(e.C/tot*100).toFixed(0);
+      return `<div class="hm-row"><div class="hm-label">${ek}</div><div class="hm-cell" style="background:${heatColor(+pA)}22;color:${heatColor(+pA)}">${pA}%</div><div class="hm-cell" style="background:${heatColor(+pB)}22;color:${heatColor(+pB)}">${pB}%</div><div class="hm-cell" style="background:${heatColor(+pC)}22;color:${heatColor(+pC)}">${pC}%</div></div>`;}).join('')+
+    `</div></div>`:'<div class="no-data" style="grid-column:1/-1">No choice data yet.</div>';
 
   // Verdicts
-  const vc={};completed.forEach(s=>{if(s.verdictTitle)vc[s.verdictTitle]=(vc[s.verdictTitle]||0)+1;});
-  const vl=Object.keys(vc);const vcols=[C.cyan,C.lime,C.gold,C.pink,C.purple,C.orange];
-  mc('chart-verdicts',{type:'bar',data:{labels:vl,datasets:[{data:vl.map(v=>vc[v]),backgroundColor:vcols.map(c=>c+'aa'),borderColor:vcols,borderWidth:1}]},options:{indexAxis:'y',scales:{x:{beginAtZero:true,ticks:{stepSize:1}}},plugins:{legend:{display:false}}}});
+  const vCounts={};
+  sessions.forEach(s=>{if(s.verdict){vCounts[s.verdict]=(vCounts[s.verdict]||0)+1;}});
+  const vKeys=Object.keys(vCounts);
+  const vColors=[C.lime,C.cyan,C.gold,C.orange,C.pink,C.purple];
+  mc('chart-verdicts',{type:'bar',data:{labels:vKeys,datasets:[{data:vKeys.map(k=>vCounts[k]),backgroundColor:vColors.slice(0,vKeys.length),borderWidth:0}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{beginAtZero:true,ticks:{stepSize:1}}}}});
 }
 
 // ════════════════════════════════════════════════════════════════
-// CHARACTER TAB
+// CHARACTER TAB  (unchanged logic from original)
 // ════════════════════════════════════════════════════════════════
-function renderCharTab(quizResults, submissions){
-  const allChars=[
-    ...quizResults.map(r=>({...r,source:'quiz'})),
-    ...submissions.map(s=>({...s,source:'advanced'})),
-  ];
+function renderCharTab(quiz, subs){
+  const allChars=[...quiz.map(r=>({...r,source:'quiz'})),...subs.map(s=>({...s,source:'advanced'}))];
+  const total=allChars.length;
+  const quizOnly=quiz.length, advOnly=subs.length;
+  const modeBreakdown={};
+  allChars.forEach(c=>{const m=c.groupMode||'unknown';modeBreakdown[m]=(modeBreakdown[m]||0)+1;});
 
-  // KPIs
-  document.getElementById('kpi-chars').innerHTML=[
-    {label:'Total Characters',   value:allChars.length,           sub:'all modes',           color:C.cyan},
-    {label:'Quiz Characters',    value:quizResults.length,        sub:'small/medium/large',  color:C.lime},
-    {label:'Custom Characters',  value:submissions.length,        sub:'advanced mode',       color:C.purple},
-    {label:'Group Modes Used',   value:new Set(allChars.map(c=>c.groupMode).filter(m=>m&&m!=='unknown')).size, sub:'distinct modes', color:C.gold},
-    {label:'Unique Roles',       value:new Set(allChars.map(c=>c.assignedRoleId).filter(Boolean)).size, sub:'distinct roles', color:C.pink},
-    {label:'Session Codes',      value:new Set(allChars.map(c=>(c.sessionPassword||'').toUpperCase()).filter(Boolean)).size, sub:'unique codes seen', color:C.orange},
-  ].map(k=>`<div class="kpi"><div class="kpi-label">${k.label}</div><div class="kpi-value" style="color:${k.color}">${k.value}</div><div class="kpi-sub">${k.sub}</div></div>`).join('');
+  document.getElementById('kpi-chars').innerHTML=`
+    <div class="kpi"><div class="kpi-label">Total Characters</div><div class="kpi-value" style="color:var(--cyan)">${total}</div></div>
+    <div class="kpi"><div class="kpi-label">Quiz Profiles</div><div class="kpi-value" style="color:var(--lime)">${quizOnly}</div></div>
+    <div class="kpi"><div class="kpi-label">Custom Chars</div><div class="kpi-value" style="color:var(--purple)">${advOnly}</div></div>
+    <div class="kpi"><div class="kpi-label">Group Modes</div><div class="kpi-value" style="color:var(--gold)">${Object.keys(modeBreakdown).length}</div></div>`;
 
-  // Mode tabs
-  const modes=['all','small','medium','large','advanced'];
-  document.getElementById('modeTabStrip').innerHTML=modes.map(m=>{
-    const meta=m==='all'?{label:'All Modes',icon:'🌐'}:(MODE_META[m]||{label:m,icon:'❓'});
-    const count=m==='all'?allChars.length:allChars.filter(c=>(c.groupMode||'unknown')===m).length;
+  const modeTabStrip=document.getElementById('modeTabStrip');
+  modeTabStrip.innerHTML=['all','small','medium','large','advanced'].map(m=>{
+    const meta=MODE_META[m]||{icon:'',label:m};
+    const count=m==='all'?total:(modeBreakdown[m]||0);
     return `<button class="mode-tab${m===activeMode?' active':''}" onclick="setModeTab('${m}',this)">${meta.icon} ${meta.label} <span style="opacity:.6">(${count})</span></button>`;
   }).join('');
 
@@ -459,14 +459,12 @@ function renderRoles(chars){
 
   let html=`<div style="font-family:'Space Mono',monospace;font-size:.65rem;color:var(--muted);margin-bottom:1rem">${total} character${total!==1?'s':''} · ${sorted.length} role${sorted.length!==1?'s':''}</div>`;
 
-  // Role cards
   html+=`<div class="role-grid">`;
   sorted.forEach(id=>{
     const count=rc[id], name=rn[id], prim=rp[id], sec=rs[id];
     const pct=((count/total)*100).toFixed(0);
     const primCol=STAT_COLOURS[prim]||C.muted;
     const secCol =STAT_COLOURS[sec] ||C.muted;
-    // Traffic light: 1=orange, 2=gold, 3+=lime
     const countCol=count>=3?C.lime:count===2?C.gold:C.orange;
     html+=`<div class="role-card">
       <div class="role-card-count" style="color:${countCol}">${count}</div>
@@ -480,7 +478,6 @@ function renderRoles(chars){
   });
   html+=`</div>`;
 
-  // Distribution bar chart
   html+=`<div class="card" style="margin-bottom:1.5rem"><div class="card-title">Role distribution — count per role</div>`;
   sorted.forEach(id=>{
     const count=rc[id],prim=rp[id];

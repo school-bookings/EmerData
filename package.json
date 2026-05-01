@@ -1,0 +1,8 @@
+{
+  "name": "emergence-analytics",
+  "version": "1.0.0",
+  "description": "EMERGENCE[Y] analytics dashboard",
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
